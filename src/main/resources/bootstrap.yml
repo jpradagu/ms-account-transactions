@@ -1,0 +1,6 @@
+spring:
+  application:
+    name: ms-account-transactions
+  cloud:
+    config:
+      url: http://localhost:8888
