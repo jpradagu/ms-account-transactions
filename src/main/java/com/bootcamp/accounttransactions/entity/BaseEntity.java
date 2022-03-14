@@ -13,7 +13,7 @@ public abstract class BaseEntity {
     @Id
     private String id;
 
-    private Integer amount;
+    private Float amount;
 
     private String accountName;
 

@@ -12,7 +12,7 @@ import java.time.LocalDateTime;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class TransactionDto {
 
-    private Integer amount;
+    private Float amount;
 
     private String accountName;
 

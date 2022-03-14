@@ -1,24 +1,24 @@
 package com.bootcamp.accounttransactions.util;
 
-import com.bootcamp.accounttransactions.dto.MovementDto;
-import com.bootcamp.accounttransactions.entity.MovementRecord;
-import org.springframework.beans.BeanUtils;
+import org.modelmapper.ModelMapper;
+
+import java.util.Collection;
+import java.util.List;
+import java.util.stream.Collectors;
+
 
 public abstract class MapperUtil {
 
-    public MovementDto convertToDto(MovementRecord movementRecord) {
-        MovementDto movementDto = new MovementDto();
-        BeanUtils.copyProperties(movementRecord, movementDto);
+    static ModelMapper modelMapper = new ModelMapper();
 
-        return movementDto;
+    public static <D, T> D map(final T entity, Class<D> outClass){
+        return modelMapper.map(entity,outClass);
     }
 
-    public MovementRecord convertToEntity(MovementDto movementDto) {
-        MovementRecord movementRecord = new MovementRecord();
-        BeanUtils.copyProperties(movementDto, movementRecord);
-
-        return movementRecord;
+    public <D, T> List<D> mapAll(final Collection <T> entityList, Class<D> outClass){
+        return entityList.stream()
+                .map(entity->map(entity, outClass))
+                .collect(Collectors.toList());
     }
-
 
 }

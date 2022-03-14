@@ -49,11 +49,11 @@ public class MovementRecordResource extends MapperUtil {
         return movementRecordService.findById(movementDto.getTransactionId())
                 .switchIfEmpty(Mono.error(new Exception()))
                 .flatMap(x -> {
-                    MovementRecord creditCard = convertToEntity(movementDto);
-                    creditCard.setCreatedAt(x.getCreatedAt());
-                    creditCard.setUpdatedAt(LocalDateTime.now());
+                    MovementRecord movementRecord = map(movementDto, MovementRecord.class);
+                    movementRecord.setCreatedAt(x.getCreatedAt());
+                    movementRecord.setUpdatedAt(LocalDateTime.now());
 
-                    return movementRecordService.save(creditCard).map(y -> convertToDto(y));
+                    return movementRecordService.save(movementRecord).map(y -> map(y, MovementDto.class));
                 });
     }
 
@@ -64,12 +64,12 @@ public class MovementRecordResource extends MapperUtil {
     }
 
     public Mono<MovementDto> findById(String id) {
-        return movementRecordService.findById(id).map(x -> convertToDto(x));
+        return movementRecordService.findById(id).map(x -> map(x, MovementDto.class));
     }
 
     public Flux<MovementDto> findAll() {
 
         return movementRecordService.findAll()
-                .map(x -> convertToDto(x));
+                .map(x -> map(x, MovementDto.class));
     }
 }
