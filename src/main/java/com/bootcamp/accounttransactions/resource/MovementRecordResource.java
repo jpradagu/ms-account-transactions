@@ -3,10 +3,15 @@ package com.bootcamp.accounttransactions.resource;
 import com.bootcamp.accounttransactions.dto.MovementDto;
 import com.bootcamp.accounttransactions.dto.TransactionDto;
 import com.bootcamp.accounttransactions.entity.MovementRecord;
+import com.bootcamp.accounttransactions.exception.InsufficientBalanceException;
+import com.bootcamp.accounttransactions.exception.ModelNotFoundException;
 import com.bootcamp.accounttransactions.service.IMovementRecordService;
 import com.bootcamp.accounttransactions.util.MapperUtil;
+import com.bootcamp.accounttransactions.webclient.IRegisterProductService;
+import com.bootcamp.accounttransactions.webclient.dto.PersonClientAccountDto;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.web.reactive.function.server.ServerResponse;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -18,6 +23,52 @@ public class MovementRecordResource extends MapperUtil {
     @Autowired
     private IMovementRecordService movementRecordService;
 
+    @Autowired
+    private IRegisterProductService registerProductService;
+
+    private Mono<TransactionDto> setDataAndSave(MovementDto movementDto) {
+        MovementRecord movementRecord = new MovementRecord();
+        movementRecord.setAmount(movementDto.getAmount());
+        movementRecord.setOriginAccount(movementDto.getOriginAccount());
+        movementRecord.setOriginDocumentNumber(movementDto.getOriginDocumentNumber());
+        movementRecord.setOriginDocumentType(movementDto.getOriginDocumentType());
+        movementRecord.setMovementType(movementDto.getMovementType());
+        movementRecord.setMovementShape(movementDto.getMovementShape());
+        movementRecord.setMovementOriginName(movementDto.getMovementOriginName());
+        movementRecord.setCreatedAt(LocalDateTime.now());
+
+        return movementRecordService.save(movementRecord).map(y -> {
+            TransactionDto transactionDto = new TransactionDto();
+            transactionDto.setTransactionId(y.getId());
+            transactionDto.setOriginAccount(y.getOriginAccount());
+
+            return transactionDto;
+        });
+    }
+
+    private Mono<TransactionDto> validateBalance(PersonClientAccountDto personClientAccountDto, MovementDto movementDto) {
+        Float newBalance = personClientAccountDto.getBalance();
+        switch (movementDto.getMovementType().toUpperCase()) {
+            case "DEPOSIT":
+                newBalance += movementDto.getAmount();
+                break;
+            case "WITHDRAWAL":
+                newBalance -= personClientAccountDto.getBalance();
+
+                if(personClientAccountDto.getBalance() < movementDto.getAmount()) {
+                    return Mono.error(new InsufficientBalanceException());
+                }
+
+                break;
+            default:
+                return Mono.error(new Exception("Unsupported Movement Type"));
+        }
+
+        personClientAccountDto.setBalance(newBalance);
+
+        return setDataAndSave(movementDto);
+    }
+
     public Mono<TransactionDto> createMovement(MovementDto movementDto) {
 
         /*
@@ -26,22 +77,33 @@ public class MovementRecordResource extends MapperUtil {
         * DE LO CONTRARIO THROW EXCEPTION
         * */
 
-        MovementRecord movementRecord = new MovementRecord();
-        movementRecord.setAccountName(movementDto.getAccountName());
-        movementRecord.setAmount(movementDto.getAmount());
-        movementRecord.setOriginDocumentNumber(movementDto.getOriginDocumentNumber());
-        movementRecord.setOriginDocumentType(movementDto.getOriginDocumentType());
-        movementRecord.setMovementShape(movementDto.getMovementShape());
-        movementRecord.setMovementOriginName(movementDto.getMovementOriginName());
-        movementRecord.setCreatedAt(LocalDateTime.now());
+        switch (movementDto.getClientType().toUpperCase()) {
+            case "PERSONAL":
+                return registerProductService.findPersonalAccountByDocumentAndDocumentTypeAndAccount(movementDto.getOriginDocumentNumber(),
+                                movementDto.getOriginDocumentType(), movementDto.getOriginAccount())
+                        .switchIfEmpty(Mono.error(new Exception()))
+                        .onErrorResume(e -> Mono.error(e))
+                        .flatMap(x -> {
+                            x.setBalance(40F);
+                            // UPDATE BALANCE AND SAVE TRANSACTION
+                            return validateBalance(x, movementDto).onErrorResume(e -> Mono.error(e));
 
-        return movementRecordService.save(movementRecord).map(x -> {
-            TransactionDto transactionDto = new TransactionDto();
-            transactionDto.setTransactionId(x.getId());
-            transactionDto.setOriginAccount(x.getOriginAccount());
-
-            return transactionDto;
-        });
+                            //return setDataAndSave(movementDto).onErrorResume(ex -> Mono.error(ex));
+                        });
+            case "BUSINESS":
+                return registerProductService.findCompanyClientAccountByDocumentAndDocumentTypeAndAccount(movementDto.getOriginDocumentNumber(),
+                                movementDto.getOriginDocumentType(), movementDto.getOriginAccount())
+                        .switchIfEmpty(Mono.error(new Exception()))
+                        .flatMap(x -> {
+                            if(x.getBalance() < movementDto.getAmount()) {
+                                return Mono.error(new InsufficientBalanceException());
+                            }
+                                // UPDATE BALANCE AND SAVE TRANSACTION
+                            return setDataAndSave(movementDto);
+                        });
+            default:
+                return Mono.error(new Exception());
+        }
     }
 
     public Mono<MovementDto> update(MovementDto movementDto) {

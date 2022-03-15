@@ -4,3 +4,10 @@ spring:
   cloud:
     config:
       url: http://localhost:8888
+
+config:
+  base:
+    endpoint: http://localhost:8080/api
+
+server:
+  port: 8082
