@@ -8,6 +8,7 @@ import com.bootcamp.accounttransactions.exception.ModelNotFoundException;
 import com.bootcamp.accounttransactions.service.IMovementRecordService;
 import com.bootcamp.accounttransactions.util.MapperUtil;
 import com.bootcamp.accounttransactions.webclient.IRegisterProductService;
+import com.bootcamp.accounttransactions.webclient.dto.CompanyClientAccountDto;
 import com.bootcamp.accounttransactions.webclient.dto.PersonClientAccountDto;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -46,14 +47,15 @@ public class MovementRecordResource extends MapperUtil {
         });
     }
 
-    private Mono<TransactionDto> validateBalance(PersonClientAccountDto personClientAccountDto, MovementDto movementDto) {
+    private Mono<TransactionDto> validateBalancePersonalAccount(PersonClientAccountDto personClientAccountDto,
+                                                                MovementDto movementDto) {
         Float newBalance = personClientAccountDto.getBalance();
         switch (movementDto.getMovementType().toUpperCase()) {
             case "DEPOSIT":
-                newBalance += movementDto.getAmount();
+                newBalance = movementDto.getAmount() + newBalance;
                 break;
             case "WITHDRAWAL":
-                newBalance -= personClientAccountDto.getBalance();
+                newBalance = personClientAccountDto.getBalance() - movementDto.getAmount();
 
                 if(personClientAccountDto.getBalance() < movementDto.getAmount()) {
                     return Mono.error(new InsufficientBalanceException());
@@ -66,7 +68,33 @@ public class MovementRecordResource extends MapperUtil {
 
         personClientAccountDto.setBalance(newBalance);
 
-        return setDataAndSave(movementDto);
+        return registerProductService.updatePersonalAccount(personClientAccountDto)
+                .flatMap(y -> setDataAndSave(movementDto).map(z -> z));
+    }
+
+    private Mono<TransactionDto> validateBalanceCompanyAccount(CompanyClientAccountDto companyClientAccountDto,
+                                                                MovementDto movementDto) {
+        Float newBalance = companyClientAccountDto.getBalance();
+        switch (movementDto.getMovementType().toUpperCase()) {
+            case "DEPOSIT":
+                newBalance += movementDto.getAmount();
+                break;
+            case "WITHDRAWAL":
+                newBalance -= companyClientAccountDto.getBalance();
+
+                if(companyClientAccountDto.getBalance() < movementDto.getAmount()) {
+                    return Mono.error(new InsufficientBalanceException());
+                }
+
+                break;
+            default:
+                return Mono.error(new Exception("Unsupported Movement Type"));
+        }
+
+        companyClientAccountDto.setBalance(newBalance);
+
+        return registerProductService.updateCompanyAccount(companyClientAccountDto)
+                .flatMap(y -> setDataAndSave(movementDto).map(z -> z));
     }
 
     public Mono<TransactionDto> createMovement(MovementDto movementDto) {
@@ -83,13 +111,7 @@ public class MovementRecordResource extends MapperUtil {
                                 movementDto.getOriginDocumentType(), movementDto.getOriginAccount())
                         .switchIfEmpty(Mono.error(new Exception()))
                         .onErrorResume(e -> Mono.error(e))
-                        .flatMap(x -> {
-                            x.setBalance(40F);
-                            // UPDATE BALANCE AND SAVE TRANSACTION
-                            return validateBalance(x, movementDto).onErrorResume(e -> Mono.error(e));
-
-                            //return setDataAndSave(movementDto).onErrorResume(ex -> Mono.error(ex));
-                        });
+                        .flatMap(x -> validateBalancePersonalAccount(x, movementDto).onErrorResume(e -> Mono.error(e)));
             case "BUSINESS":
                 return registerProductService.findCompanyClientAccountByDocumentAndDocumentTypeAndAccount(movementDto.getOriginDocumentNumber(),
                                 movementDto.getOriginDocumentType(), movementDto.getOriginAccount())
@@ -102,7 +124,7 @@ public class MovementRecordResource extends MapperUtil {
                             return setDataAndSave(movementDto);
                         });
             default:
-                return Mono.error(new Exception());
+                return Mono.error(new Exception("Unsuportted client type"));
         }
     }
 

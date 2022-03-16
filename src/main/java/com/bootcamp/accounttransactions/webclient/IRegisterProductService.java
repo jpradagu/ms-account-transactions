@@ -13,4 +13,8 @@ public interface IRegisterProductService {
     Mono<CompanyClientAccountDto> findCompanyClientAccountByDocumentAndDocumentTypeAndAccount(String document,
                                                                                                      String documentType,
                                                                                                      String account);
+
+    Mono<PersonClientAccountDto> updatePersonalAccount(PersonClientAccountDto personClientAccountDto);
+
+    Mono<CompanyClientAccountDto> updateCompanyAccount(CompanyClientAccountDto companyClientAccountDto);
 }
