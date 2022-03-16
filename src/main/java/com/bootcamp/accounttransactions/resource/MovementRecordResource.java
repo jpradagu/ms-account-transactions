@@ -116,13 +116,7 @@ public class MovementRecordResource extends MapperUtil {
                 return registerProductService.findCompanyClientAccountByDocumentAndDocumentTypeAndAccount(movementDto.getOriginDocumentNumber(),
                                 movementDto.getOriginDocumentType(), movementDto.getOriginAccount())
                         .switchIfEmpty(Mono.error(new Exception()))
-                        .flatMap(x -> {
-                            if(x.getBalance() < movementDto.getAmount()) {
-                                return Mono.error(new InsufficientBalanceException());
-                            }
-                                // UPDATE BALANCE AND SAVE TRANSACTION
-                            return setDataAndSave(movementDto);
-                        });
+                        .flatMap(x -> validateBalanceCompanyAccount(x, movementDto).onErrorResume(Mono::error));
             default:
                 return Mono.error(new Exception("Unsuportted client type"));
         }
