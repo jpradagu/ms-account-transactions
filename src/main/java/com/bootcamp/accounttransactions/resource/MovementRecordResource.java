@@ -110,8 +110,8 @@ public class MovementRecordResource extends MapperUtil {
                 return registerProductService.findPersonalAccountByDocumentAndDocumentTypeAndAccount(movementDto.getOriginDocumentNumber(),
                                 movementDto.getOriginDocumentType(), movementDto.getOriginAccount())
                         .switchIfEmpty(Mono.error(new Exception()))
-                        .onErrorResume(e -> Mono.error(e))
-                        .flatMap(x -> validateBalancePersonalAccount(x, movementDto).onErrorResume(e -> Mono.error(e)));
+                        .onErrorResume(Mono::error)
+                        .flatMap(x -> validateBalancePersonalAccount(x, movementDto).onErrorResume(Mono::error));
             case "BUSINESS":
                 return registerProductService.findCompanyClientAccountByDocumentAndDocumentTypeAndAccount(movementDto.getOriginDocumentNumber(),
                                 movementDto.getOriginDocumentType(), movementDto.getOriginAccount())
