@@ -99,12 +99,6 @@ public class MovementRecordResource extends MapperUtil {
 
     public Mono<TransactionDto> createMovement(MovementDto movementDto) {
 
-        /*
-        * BUSCO SALDOS POR ACCOUNT Y DATOS DEL CLIENTE
-        * SI EL AMOUNT ES MAYOR O IGUAL AL SALDO, REALIZO TRANSACCIÓN
-        * DE LO CONTRARIO THROW EXCEPTION
-        * */
-
         switch (movementDto.getClientType().toUpperCase()) {
             case "PERSONAL":
                 return registerProductService.findPersonalAccountByDocumentAndDocumentTypeAndAccount(movementDto.getOriginDocumentNumber(),
