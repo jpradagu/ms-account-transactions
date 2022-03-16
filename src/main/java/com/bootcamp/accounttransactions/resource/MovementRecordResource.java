@@ -47,7 +47,7 @@ public class MovementRecordResource extends MapperUtil {
         });
     }
 
-    private Mono<TransactionDto> validateBalancePersonalAccount(PersonClientAccountDto personClientAccountDto,
+    private Mono<TransactionDto> validateBalance(PersonClientAccountDto personClientAccountDto,
                                                                 MovementDto movementDto) {
         Float newBalance = personClientAccountDto.getBalance();
         switch (movementDto.getMovementType().toUpperCase()) {
@@ -72,7 +72,7 @@ public class MovementRecordResource extends MapperUtil {
                 .flatMap(y -> setDataAndSave(movementDto).map(z -> z));
     }
 
-    private Mono<TransactionDto> validateBalanceCompanyAccount(CompanyClientAccountDto companyClientAccountDto,
+    private Mono<TransactionDto> validateBalance(CompanyClientAccountDto companyClientAccountDto,
                                                                 MovementDto movementDto) {
         Float newBalance = companyClientAccountDto.getBalance();
         switch (movementDto.getMovementType().toUpperCase()) {
@@ -111,12 +111,12 @@ public class MovementRecordResource extends MapperUtil {
                                 movementDto.getOriginDocumentType(), movementDto.getOriginAccount())
                         .switchIfEmpty(Mono.error(new Exception()))
                         .onErrorResume(Mono::error)
-                        .flatMap(x -> validateBalancePersonalAccount(x, movementDto).onErrorResume(Mono::error));
+                        .flatMap(x -> validateBalance(x, movementDto).onErrorResume(Mono::error));
             case "BUSINESS":
                 return registerProductService.findCompanyClientAccountByDocumentAndDocumentTypeAndAccount(movementDto.getOriginDocumentNumber(),
                                 movementDto.getOriginDocumentType(), movementDto.getOriginAccount())
                         .switchIfEmpty(Mono.error(new Exception()))
-                        .flatMap(x -> validateBalanceCompanyAccount(x, movementDto).onErrorResume(Mono::error));
+                        .flatMap(x -> validateBalance(x, movementDto).onErrorResume(Mono::error));
             default:
                 return Mono.error(new Exception("Unsuportted client type"));
         }
