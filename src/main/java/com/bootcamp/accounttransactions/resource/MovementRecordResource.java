@@ -77,10 +77,10 @@ public class MovementRecordResource extends MapperUtil {
         Float newBalance = companyClientAccountDto.getBalance();
         switch (movementDto.getMovementType().toUpperCase()) {
             case "DEPOSIT":
-                newBalance += movementDto.getAmount();
+                newBalance = movementDto.getAmount() + newBalance;
                 break;
             case "WITHDRAWAL":
-                newBalance -= companyClientAccountDto.getBalance();
+                newBalance = companyClientAccountDto.getBalance() - movementDto.getAmount();
 
                 if(companyClientAccountDto.getBalance() < movementDto.getAmount()) {
                     return Mono.error(new InsufficientBalanceException());
