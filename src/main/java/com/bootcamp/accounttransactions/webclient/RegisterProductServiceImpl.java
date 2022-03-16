@@ -16,8 +16,8 @@ import reactor.core.publisher.Mono;
 @Service
 public class RegisterProductServiceImpl implements IRegisterProductService {
 
-    @Autowired
-    private WebClient webClient;
+//    @Autowired
+    private WebClient webClient = WebClient.create();
 
     @Override
     public Mono<PersonClientAccountDto> findPersonalAccountByDocumentAndDocumentTypeAndAccount(String document, String documentType, String account) {
