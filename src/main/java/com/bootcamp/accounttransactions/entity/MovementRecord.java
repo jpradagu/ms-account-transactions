@@ -7,6 +7,8 @@ import lombok.Setter;
 @Setter
 public class MovementRecord extends BaseEntity {
 
+    private String movementType;
+
     private String movementShape;
 
     private String movementOriginName;

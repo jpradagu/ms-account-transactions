@@ -7,6 +7,8 @@ import lombok.Setter;
 @Setter
 public class MovementDto extends TransactionDto {
 
+    private String movementType;
+
     private String movementShape;
 
     private String movementOriginName;

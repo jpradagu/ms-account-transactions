@@ -14,8 +14,6 @@ public class TransactionDto {
 
     private Float amount;
 
-    private String accountName;
-
     private String originAccount;
 
     private String originDocumentNumber;
@@ -24,5 +22,9 @@ public class TransactionDto {
 
     private String transactionId;
 
+    private String clientType;
+
     private LocalDateTime transactionDate;
+
+    private String accountName;
 }
