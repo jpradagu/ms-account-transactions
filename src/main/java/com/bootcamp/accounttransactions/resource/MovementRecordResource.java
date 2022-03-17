@@ -91,27 +91,41 @@ public class MovementRecordResource extends MapperUtil {
 
     private Mono<TransactionDto> validate(CompanyClientAccountDto companyClientAccountDto,
                                                                 MovementDto movementDto) {
-        Float newBalance = companyClientAccountDto.getBalance();
-        switch (movementDto.getMovementType().toUpperCase()) {
-            case "DEPOSIT":
-                newBalance = movementDto.getAmount() + newBalance;
-                break;
-            case "WITHDRAWAL":
-                newBalance = companyClientAccountDto.getBalance() - movementDto.getAmount();
 
-                if(companyClientAccountDto.getBalance() < movementDto.getAmount()) {
-                    return Mono.error(new InsufficientBalanceException());
-                }
+        return movementRecordService.countMovementsByAccountNameDocumentNumberDocumentTypeAndDates(
+                        movementDto.getAccountName(), movementDto.getOriginDocumentNumber(),
+                        movementDto.getOriginDocumentType(), LocalDate.of(LocalDate.now().getYear(), LocalDate.now().getMonth(), 1),
+                        LocalDate.of(LocalDate.now().getYear(), LocalDate.now().getMonth(), Calendar.getInstance().getActualMaximum(Calendar.DAY_OF_MONTH)))
+                .flatMap(recordCount -> {
+                    if(recordCount.longValue() <= companyClientAccountDto.getTypeAccount().getMaxMonthlyMovements()) {
+                        Float newBalance = companyClientAccountDto.getBalance();
+                        switch (movementDto.getMovementType().toUpperCase()) {
+                            case "DEPOSIT":
+                                newBalance = movementDto.getAmount() + newBalance;
+                                break;
+                            case "WITHDRAWAL":
+                                newBalance = companyClientAccountDto.getBalance() - movementDto.getAmount();
 
-                break;
-            default:
-                return Mono.error(new Exception("Unsupported Movement Type"));
-        }
+                                if(companyClientAccountDto.getBalance() < movementDto.getAmount()) {
+                                    return Mono.error(new InsufficientBalanceException());
+                                }
 
-        companyClientAccountDto.setBalance(newBalance);
+                                break;
+                            default:
+                                return Mono.error(new Exception("Unsupported Movement Type"));
+                        }
 
-        return registerProductService.updateCompanyAccount(companyClientAccountDto)
-                .flatMap(y -> setDataAndSave(movementDto).map(z -> z));
+                        companyClientAccountDto.setBalance(newBalance);
+
+                        return registerProductService.updateCompanyAccount(companyClientAccountDto)
+                                .flatMap(y -> {
+                                    movementDto.setAccountName(companyClientAccountDto.getTypeAccount().getName());
+                                    return setDataAndSave(movementDto).map(z -> z);
+                                });
+                    }
+
+                    return Mono.error(new Exception("Max Monthly Movements Per Month Limit Reached"));
+                });
     }
 
     public Mono<TransactionDto> createMovement(MovementDto movementDto) {
