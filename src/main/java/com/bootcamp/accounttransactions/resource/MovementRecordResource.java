@@ -16,7 +16,9 @@ import org.springframework.web.reactive.function.server.ServerResponse;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Calendar;
 
 @Service
 public class MovementRecordResource extends MapperUtil {
@@ -37,6 +39,7 @@ public class MovementRecordResource extends MapperUtil {
         movementRecord.setMovementShape(movementDto.getMovementShape());
         movementRecord.setMovementOriginName(movementDto.getMovementOriginName());
         movementRecord.setCreatedAt(LocalDateTime.now());
+        movementRecord.setAccountName(movementDto.getAccountName());
 
         return movementRecordService.save(movementRecord).map(y -> {
             TransactionDto transactionDto = new TransactionDto();
@@ -47,32 +50,46 @@ public class MovementRecordResource extends MapperUtil {
         });
     }
 
-    private Mono<TransactionDto> validateBalance(PersonClientAccountDto personClientAccountDto,
+    private Mono<TransactionDto> validate(PersonClientAccountDto personClientAccountDto,
                                                                 MovementDto movementDto) {
-        Float newBalance = personClientAccountDto.getBalance();
-        switch (movementDto.getMovementType().toUpperCase()) {
-            case "DEPOSIT":
-                newBalance = movementDto.getAmount() + newBalance;
-                break;
-            case "WITHDRAWAL":
-                newBalance = personClientAccountDto.getBalance() - movementDto.getAmount();
 
-                if(personClientAccountDto.getBalance() < movementDto.getAmount()) {
-                    return Mono.error(new InsufficientBalanceException());
-                }
+        return movementRecordService.countMovementsByAccountNameDocumentNumberDocumentTypeAndDates(
+                movementDto.getAccountName(), movementDto.getOriginDocumentNumber(),
+                movementDto.getOriginDocumentType(), LocalDate.of(LocalDate.now().getYear(), LocalDate.now().getMonth(), 1),
+                        LocalDate.of(LocalDate.now().getYear(), LocalDate.now().getMonth(), Calendar.getInstance().getActualMaximum(Calendar.DAY_OF_MONTH)))
+                .flatMap(recordCount -> {
+                    if(recordCount.longValue() <= personClientAccountDto.getTypeAccount().getMaxMonthlyMovements()) {
+                        Float newBalance = personClientAccountDto.getBalance();
+                        switch (movementDto.getMovementType().toUpperCase()) {
+                            case "DEPOSIT":
+                                newBalance = movementDto.getAmount() + newBalance;
+                                break;
+                            case "WITHDRAWAL":
+                                newBalance = personClientAccountDto.getBalance() - movementDto.getAmount();
 
-                break;
-            default:
-                return Mono.error(new Exception("Unsupported Movement Type"));
-        }
+                                if(personClientAccountDto.getBalance() < movementDto.getAmount()) {
+                                    return Mono.error(new InsufficientBalanceException());
+                                }
 
-        personClientAccountDto.setBalance(newBalance);
+                                break;
+                            default:
+                                return Mono.error(new Exception("Unsupported Movement Type"));
+                        }
 
-        return registerProductService.updatePersonalAccount(personClientAccountDto)
-                .flatMap(y -> setDataAndSave(movementDto).map(z -> z));
+                        personClientAccountDto.setBalance(newBalance);
+
+                        return registerProductService.updatePersonalAccount(personClientAccountDto)
+                                .flatMap(y -> {
+                                    movementDto.setAccountName(personClientAccountDto.getTypeAccount().getName());
+                                    return setDataAndSave(movementDto).map(z -> z);
+                                });
+                    }
+
+                    return Mono.error(new Exception("Max Monthly Movements Per Month Limit Reached"));
+                });
     }
 
-    private Mono<TransactionDto> validateBalance(CompanyClientAccountDto companyClientAccountDto,
+    private Mono<TransactionDto> validate(CompanyClientAccountDto companyClientAccountDto,
                                                                 MovementDto movementDto) {
         Float newBalance = companyClientAccountDto.getBalance();
         switch (movementDto.getMovementType().toUpperCase()) {
@@ -105,12 +122,12 @@ public class MovementRecordResource extends MapperUtil {
                                 movementDto.getOriginDocumentType(), movementDto.getOriginAccount())
                         .switchIfEmpty(Mono.error(new Exception()))
                         .onErrorResume(Mono::error)
-                        .flatMap(x -> validateBalance(x, movementDto).onErrorResume(Mono::error));
+                        .flatMap(x -> validate(x, movementDto).onErrorResume(Mono::error));
             case "BUSINESS":
                 return registerProductService.findCompanyClientAccountByDocumentAndDocumentTypeAndAccount(movementDto.getOriginDocumentNumber(),
                                 movementDto.getOriginDocumentType(), movementDto.getOriginAccount())
                         .switchIfEmpty(Mono.error(new Exception()))
-                        .flatMap(x -> validateBalance(x, movementDto).onErrorResume(Mono::error));
+                        .flatMap(x -> validate(x, movementDto).onErrorResume(Mono::error));
             default:
                 return Mono.error(new Exception("Unsuportted client type"));
         }

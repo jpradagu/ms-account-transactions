@@ -25,4 +25,6 @@ public class TransactionDto {
     private String clientType;
 
     private LocalDateTime transactionDate;
+
+    private String accountName;
 }
