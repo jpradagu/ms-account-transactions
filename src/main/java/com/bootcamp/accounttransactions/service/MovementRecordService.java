@@ -9,6 +9,7 @@ import reactor.core.publisher.Mono;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Service
 public class MovementRecordService implements IMovementRecordService {
@@ -40,4 +41,10 @@ public class MovementRecordService implements IMovementRecordService {
     public Mono<Long> countMovementsByAccountNameDocumentNumberDocumentTypeAndDates(String accountName, String originDocumentNumber, String originDocumentType, LocalDate createdAtFrom, LocalDate createdAtTo) {
         return movementRepository.countMovementRecordByAccountNameIsAndOriginDocumentNumberAndOriginDocumentTypeAndCreatedAtIsBetween(accountName, originDocumentNumber, originDocumentType, createdAtFrom, createdAtTo);
     }
+
+	@Override
+	public Flux<MovementRecord> saveAll(List<MovementRecord> movementRecords) {
+		// TODO Auto-generated method stub
+		return movementRepository.saveAll(movementRecords);
+	}
 }
