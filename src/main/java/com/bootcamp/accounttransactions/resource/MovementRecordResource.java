@@ -223,7 +223,6 @@ public class MovementRecordResource extends MapperUtil {
 	}
 
 	public Flux<MovementDto> findAll() {
-
 		return movementRecordService.findAll().map(x -> map(x, MovementDto.class));
 	}
 }
