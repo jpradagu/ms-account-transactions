@@ -27,7 +27,7 @@ public class MovementController {
     }
 
     @PostMapping
-    public Mono<TransactionDto> createMovement(@RequestBody MovementDto movementDto) {
+    public Flux<TransactionDto> createMovement(@RequestBody MovementDto movementDto) {
         return movementRecordResource.createMovement(movementDto);
     }
 

@@ -37,15 +37,10 @@ public class MovementRecordResource extends MapperUtil {
 	private IRegisterProductService registerProductService;
 
 	private Flux<TransactionDto> setDataAndSave(MovementDto movementDto, Boolean flagCommission) {
-
 		List<MovementRecord> movemenstToSave = new ArrayList<>();
-
 		MovementRecord movementRecord = map(movementDto, MovementRecord.class);
-
 		movementRecord.setCreatedAt(LocalDateTime.now());
-
 		movemenstToSave.add(movementRecord);
-
 		if (flagCommission) {
 			MovementRecord movementCommission = map(movementDto, MovementRecord.class);
 			movementCommission.setMovementType("COMISSION");
@@ -53,34 +48,12 @@ public class MovementRecordResource extends MapperUtil {
 
 			movemenstToSave.add(movementCommission);
 		}
-
 		return movementRecordService.saveAll(movemenstToSave).map(y -> {
 			TransactionDto transactionDto = new TransactionDto();
 			transactionDto.setTransactionId(y.getId());
 			transactionDto.setOriginAccount(y.getOriginAccount());
 			return transactionDto;
 		});
-
-		/*
-		 * MovementRecord movementRecord = new MovementRecord();
-		 * movementRecord.setAmount(movementDto.getAmount());
-		 * movementRecord.setOriginAccount(movementDto.getOriginAccount());
-		 * movementRecord.setOriginDocumentNumber(movementDto.getOriginDocumentNumber())
-		 * ; movementRecord.setOriginDocumentType(movementDto.getOriginDocumentType());
-		 * movementRecord.setMovementType(movementDto.getMovementType());
-		 * movementRecord.setMovementShape(movementDto.getMovementShape());
-		 * movementRecord.setMovementOriginName(movementDto.getMovementOriginName());
-		 * movementRecord.setCreatedAt(LocalDateTime.now());
-		 * movementRecord.setAccountName(movementDto.getAccountName());
-		 */
-
-		/*
-		 * return movementRecordService.save(movementRecord).map(y -> { TransactionDto
-		 * transactionDto = new TransactionDto();
-		 * transactionDto.setTransactionId(y.getId());
-		 * transactionDto.setOriginAccount(y.getOriginAccount()); return transactionDto;
-		 * })
-		 */
 	}
 
 	private Flux<TransactionDto> validate(PersonClientAccountDto personClientAccountDto, MovementDto movementDto) {
@@ -210,23 +183,21 @@ public class MovementRecordResource extends MapperUtil {
 				});
 	}
 
-	public Mono<TransactionDto> createMovement(MovementDto movementDto) {
+	public Flux<TransactionDto> createMovement(MovementDto movementDto) {
 
 		switch (movementDto.getClientType().toUpperCase()) {
 		case "PERSONAL":
 			return registerProductService
 					.findPersonalAccountByDocumentAndDocumentTypeAndAccount(movementDto.getOriginDocumentNumber(),
 							movementDto.getOriginDocumentType(), movementDto.getOriginAccount())
-					.switchIfEmpty(Mono.error(new Exception())).onErrorResume(Mono::error)
-					.flatMap(x -> validate(x, movementDto).onErrorResume(Flux::error));
+					.flatMapMany(x -> validate(x, movementDto).onErrorResume(Flux::error));
 		case "BUSINESS":
 			return registerProductService
 					.findCompanyClientAccountByDocumentAndDocumentTypeAndAccount(movementDto.getOriginDocumentNumber(),
 							movementDto.getOriginDocumentType(), movementDto.getOriginAccount())
-					.switchIfEmpty(Mono.error(new Exception()))
-					.flatMap(x -> validate(x, movementDto).onErrorResume(Flux::error));
+					.flatMapMany(x -> validate(x, movementDto).onErrorResume(Flux::error));
 		default:
-			return Mono.error(new Exception("Unsuportted client type"));
+			return Flux.error(new Exception("Unsuportted client type"));
 		}
 	}
 
