@@ -3,4 +3,9 @@ spring:
     name: ms-account-transactions
   cloud:
     config:
-      url: http://localhost:8888
+      uri: http://192.168.88.26:8888
+
+eureka:
+    client:
+        serviceUrl:
+            defaultZone: http://192.168.88.26:8761/eureka/
