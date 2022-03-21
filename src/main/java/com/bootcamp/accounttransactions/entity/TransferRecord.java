@@ -14,4 +14,8 @@ public class TransferRecord extends BaseEntity {
     private String recipientDocumentNumber;
 
     private String recipientDocumentType;
+
+    private String recipientClientType;
+
+    private String transferType;
 }

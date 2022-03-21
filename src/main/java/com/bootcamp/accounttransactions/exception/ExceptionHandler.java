@@ -36,6 +36,7 @@ public class ExceptionHandler {
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     @org.springframework.web.bind.annotation.ExceptionHandler(value = AccountNotFoundException.class)
     public Mono<ExceptionResponse> manageAccountNotFoundException(AccountNotFoundException e) {
+        log.error("Account not found: {}", e);
         return Mono.just(new ExceptionResponse(LocalDateTime.now(), e.getMessage()));
     }
 
