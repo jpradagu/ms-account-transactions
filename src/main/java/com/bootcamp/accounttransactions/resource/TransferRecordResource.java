@@ -12,6 +12,7 @@ import com.bootcamp.accounttransactions.util.TransferCreationService;
 import com.bootcamp.accounttransactions.webclient.dto.CompanyClientAccountDto;
 import com.bootcamp.accounttransactions.webclient.dto.PersonClientAccountDto;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -19,6 +20,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Calendar;
 
+@Service
 public class TransferRecordResource extends MapperUtil {
 
     @Autowired
