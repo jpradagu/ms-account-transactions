@@ -29,7 +29,7 @@ public class TransferRecordResource extends MapperUtil {
     @Autowired
     private TransferCreationService transferCreationService;
 
-    public Mono<TransactionDto> createMovement(TransferDto transferDto) {
+    public Mono<TransactionDto> create(TransferDto transferDto) {
 
         Mono<TransferRecord> monoTransfer;
 
