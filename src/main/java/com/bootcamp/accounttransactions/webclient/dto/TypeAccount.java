@@ -8,4 +8,6 @@ import lombok.Setter;
 public class TypeAccount {
     private String name;
     private Integer maxMonthlyMovements;
+    private Integer limitWithoutCommission;
+    private Float commissionTransaction;
 }

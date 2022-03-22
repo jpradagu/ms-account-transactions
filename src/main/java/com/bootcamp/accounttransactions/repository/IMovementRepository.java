@@ -11,6 +11,7 @@ import java.time.LocalDateTime;
 @Repository
 public interface IMovementRepository extends ReactiveMongoRepository<MovementRecord, String> {
 
+
     Mono<Long> countMovementRecordByAccountNameIsAndOriginDocumentNumberAndOriginDocumentTypeAndCreatedAtIsBetween(String accountName,
                                                                                                                       String originDocumentNumber,
                                                                                                                       String originDocumentType,

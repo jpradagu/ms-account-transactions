@@ -7,7 +7,9 @@ import com.bootcamp.accounttransactions.exception.InsufficientBalanceException;
 import com.bootcamp.accounttransactions.exception.ModelNotFoundException;
 import com.bootcamp.accounttransactions.service.IMovementRecordService;
 import com.bootcamp.accounttransactions.util.MapperUtil;
+import com.bootcamp.accounttransactions.webclient.ICommissionTransactionService;
 import com.bootcamp.accounttransactions.webclient.IRegisterProductService;
+import com.bootcamp.accounttransactions.webclient.dto.CommissionTransactionDto;
 import com.bootcamp.accounttransactions.webclient.dto.CompanyClientAccountDto;
 import com.bootcamp.accounttransactions.webclient.dto.PersonClientAccountDto;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,161 +20,209 @@ import reactor.core.publisher.Mono;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.List;
 
 @Service
 public class MovementRecordResource extends MapperUtil {
 
-    @Autowired
-    private IMovementRecordService movementRecordService;
+	@Autowired
+	private IMovementRecordService movementRecordService;
 
-    @Autowired
-    private IRegisterProductService registerProductService;
+	@Autowired
+	private ICommissionTransactionService commissionService;
 
-    private Mono<TransactionDto> setDataAndSave(MovementDto movementDto) {
-        MovementRecord movementRecord = new MovementRecord();
-        movementRecord.setAmount(movementDto.getAmount());
-        movementRecord.setOriginAccount(movementDto.getOriginAccount());
-        movementRecord.setOriginDocumentNumber(movementDto.getOriginDocumentNumber());
-        movementRecord.setOriginDocumentType(movementDto.getOriginDocumentType());
-        movementRecord.setMovementType(movementDto.getMovementType());
-        movementRecord.setMovementShape(movementDto.getMovementShape());
-        movementRecord.setMovementOriginName(movementDto.getMovementOriginName());
-        movementRecord.setCreatedAt(LocalDateTime.now());
-        movementRecord.setAccountName(movementDto.getAccountName());
+	@Autowired
+	private IRegisterProductService registerProductService;
 
-        return movementRecordService.save(movementRecord).map(y -> {
-            TransactionDto transactionDto = new TransactionDto();
-            transactionDto.setTransactionId(y.getId());
-            transactionDto.setOriginAccount(y.getOriginAccount());
+	private Flux<TransactionDto> setDataAndSave(MovementDto movementDto, Boolean flagCommission) {
+		List<MovementRecord> movemenstToSave = new ArrayList<>();
+		MovementRecord movementRecord = map(movementDto, MovementRecord.class);
+		movementRecord.setCreatedAt(LocalDateTime.now());
+		movemenstToSave.add(movementRecord);
+		if (flagCommission) {
+			MovementRecord movementCommission = map(movementDto, MovementRecord.class);
+			movementCommission.setMovementType("COMISSION");
+			movementCommission.setCreatedAt(LocalDateTime.now());
 
-            return transactionDto;
-        });
-    }
+			movemenstToSave.add(movementCommission);
+		}
+		return movementRecordService.saveAll(movemenstToSave).map(y -> {
+			TransactionDto transactionDto = new TransactionDto();
+			transactionDto.setTransactionId(y.getId());
+			transactionDto.setOriginAccount(y.getOriginAccount());
+			return transactionDto;
+		});
+	}
 
-    private Mono<TransactionDto> validate(PersonClientAccountDto personClientAccountDto,
-                                                                MovementDto movementDto) {
+	private Flux<TransactionDto> validate(PersonClientAccountDto personClientAccountDto, MovementDto movementDto) {
+		return movementRecordService
+				.countMovementsByAccountNameDocumentNumberDocumentTypeAndDates(movementDto.getAccountName(),
+						movementDto.getOriginDocumentNumber(), movementDto.getOriginDocumentType(),
+						LocalDate.of(LocalDate.now().getYear(), LocalDate.now().getMonth(), 1),
+						LocalDate.of(LocalDate.now().getYear(), LocalDate.now().getMonth(),
+								Calendar.getInstance().getActualMaximum(Calendar.DAY_OF_MONTH)))
+				.flatMapMany(recordCount -> {
+					Boolean flagCommission = false;
+					if (recordCount.longValue() <= personClientAccountDto.getTypeAccount().getMaxMonthlyMovements()) {
+						Float newBalance = personClientAccountDto.getBalance();
+						switch (movementDto.getMovementType().toUpperCase()) {
+						case "DEPOSIT":
+							newBalance = movementDto.getAmount() + newBalance;
+							if (recordCount > personClientAccountDto.getTypeAccount().getLimitWithoutCommission()) {
+								flagCommission = true;
+								newBalance = newBalance
+										- personClientAccountDto.getTypeAccount().getCommissionTransaction();
+							}
+							if (personClientAccountDto.getBalance() < movementDto.getAmount()) {
+								return Flux.error(new InsufficientBalanceException());
+							}
+							break;
+						case "WITHDRAWAL":
+							newBalance = personClientAccountDto.getBalance() - movementDto.getAmount();
+							if (recordCount > personClientAccountDto.getTypeAccount().getLimitWithoutCommission()) {
+								flagCommission = true;
+								newBalance = newBalance
+										- personClientAccountDto.getTypeAccount().getCommissionTransaction();
+							}
+							if (personClientAccountDto.getBalance() < movementDto.getAmount()) {
+								return Flux.error(new InsufficientBalanceException());
+							}
+							break;
+						default:
+							return Flux.error(new Exception("Unsupported Movement Type"));
+						}
+						personClientAccountDto.setBalance(newBalance);
+						if (flagCommission) {
+							commissionService.create(
+									new CommissionTransactionDto(personClientAccountDto.getClient().getDocumentType(),
+											personClientAccountDto.getClient().getNumberDocument(),
+											movementDto.getMovementType(), personClientAccountDto.getBalance(),
+											personClientAccountDto.getTypeAccount().getCommissionTransaction()));
+						}
+						Boolean finalFlagCommission = flagCommission;
+						return registerProductService.updatePersonalAccount(personClientAccountDto).flatMapMany(y -> {
+							movementDto.setAccountName(personClientAccountDto.getTypeAccount().getName());
+							return setDataAndSave(movementDto, finalFlagCommission);
+						});
+					}
+					return Flux.error(new Exception("Max Monthly Movements Per Month Limit Reached"));
+				});
+	}
 
-        return movementRecordService.countMovementsByAccountNameDocumentNumberDocumentTypeAndDates(
-                movementDto.getAccountName(), movementDto.getOriginDocumentNumber(),
-                movementDto.getOriginDocumentType(), LocalDate.of(LocalDate.now().getYear(), LocalDate.now().getMonth(), 1),
-                        LocalDate.of(LocalDate.now().getYear(), LocalDate.now().getMonth(), Calendar.getInstance().getActualMaximum(Calendar.DAY_OF_MONTH)))
-                .flatMap(recordCount -> {
-                    if(recordCount.longValue() <= personClientAccountDto.getTypeAccount().getMaxMonthlyMovements()) {
-                        Float newBalance = personClientAccountDto.getBalance();
-                        switch (movementDto.getMovementType().toUpperCase()) {
-                            case "DEPOSIT":
-                                newBalance = movementDto.getAmount() + newBalance;
-                                break;
-                            case "WITHDRAWAL":
-                                newBalance = personClientAccountDto.getBalance() - movementDto.getAmount();
+	private Flux<TransactionDto> validate(CompanyClientAccountDto companyClientAccountDto, MovementDto movementDto) {
 
-                                if(personClientAccountDto.getBalance() < movementDto.getAmount()) {
-                                    return Mono.error(new InsufficientBalanceException());
-                                }
 
-                                break;
-                            default:
-                                return Mono.error(new Exception("Unsupported Movement Type"));
-                        }
+		return movementRecordService
+				.countMovementsByAccountNameDocumentNumberDocumentTypeAndDates(movementDto.getAccountName(),
+						movementDto.getOriginDocumentNumber(), movementDto.getOriginDocumentType(),
+						LocalDate.of(LocalDate.now().getYear(), LocalDate.now().getMonth(), 1),
+						LocalDate.of(LocalDate.now().getYear(), LocalDate.now().getMonth(),
+								Calendar.getInstance().getActualMaximum(Calendar.DAY_OF_MONTH)))
+				.flatMapMany(recordCount -> {
+					boolean flagCommission = false;
+					if (recordCount <= companyClientAccountDto.getTypeAccount().getMaxMonthlyMovements()) {
+						Float newBalance = companyClientAccountDto.getBalance();
 
-                        personClientAccountDto.setBalance(newBalance);
+						switch (movementDto.getMovementType().toUpperCase()) {
+						case "DEPOSIT":
 
-                        return registerProductService.updatePersonalAccount(personClientAccountDto)
-                                .flatMap(y -> {
-                                    movementDto.setAccountName(personClientAccountDto.getTypeAccount().getName());
-                                    return setDataAndSave(movementDto).map(z -> z);
-                                });
-                    }
+							newBalance = movementDto.getAmount() + newBalance;
 
-                    return Mono.error(new Exception("Max Monthly Movements Per Month Limit Reached"));
-                });
-    }
+							if (recordCount > companyClientAccountDto.getTypeAccount().getLimitWithoutCommission()) {
+								flagCommission = true;
 
-    private Mono<TransactionDto> validate(CompanyClientAccountDto companyClientAccountDto,
-                                                                MovementDto movementDto) {
+								newBalance = newBalance
+										- companyClientAccountDto.getTypeAccount().getCommissionTransaction();
+							}
 
-        return movementRecordService.countMovementsByAccountNameDocumentNumberDocumentTypeAndDates(
-                        movementDto.getAccountName(), movementDto.getOriginDocumentNumber(),
-                        movementDto.getOriginDocumentType(), LocalDate.of(LocalDate.now().getYear(), LocalDate.now().getMonth(), 1),
-                        LocalDate.of(LocalDate.now().getYear(), LocalDate.now().getMonth(), Calendar.getInstance().getActualMaximum(Calendar.DAY_OF_MONTH)))
-                .flatMap(recordCount -> {
-                    if(recordCount.longValue() <= companyClientAccountDto.getTypeAccount().getMaxMonthlyMovements()) {
-                        Float newBalance = companyClientAccountDto.getBalance();
-                        switch (movementDto.getMovementType().toUpperCase()) {
-                            case "DEPOSIT":
-                                newBalance = movementDto.getAmount() + newBalance;
-                                break;
-                            case "WITHDRAWAL":
-                                newBalance = companyClientAccountDto.getBalance() - movementDto.getAmount();
+							if (companyClientAccountDto.getBalance() < movementDto.getAmount()) {
+								return Flux.error(new InsufficientBalanceException());
+							}
 
-                                if(companyClientAccountDto.getBalance() < movementDto.getAmount()) {
-                                    return Mono.error(new InsufficientBalanceException());
-                                }
+							break;
+						case "WITHDRAWAL":
+							newBalance = companyClientAccountDto.getBalance() - movementDto.getAmount();
 
-                                break;
-                            default:
-                                return Mono.error(new Exception("Unsupported Movement Type"));
-                        }
+							if (recordCount > companyClientAccountDto.getTypeAccount().getLimitWithoutCommission()) {
+								flagCommission = true;
 
-                        companyClientAccountDto.setBalance(newBalance);
+								newBalance = newBalance
+										- companyClientAccountDto.getTypeAccount().getCommissionTransaction();
 
-                        return registerProductService.updateCompanyAccount(companyClientAccountDto)
-                                .flatMap(y -> {
-                                    movementDto.setAccountName(companyClientAccountDto.getTypeAccount().getName());
-                                    return setDataAndSave(movementDto).map(z -> z);
-                                });
-                    }
+							}
 
-                    return Mono.error(new Exception("Max Monthly Movements Per Month Limit Reached"));
-                });
-    }
+							if (companyClientAccountDto.getBalance() < movementDto.getAmount()) {
+								return Flux.error(new InsufficientBalanceException());
+							}
 
-    public Mono<TransactionDto> createMovement(MovementDto movementDto) {
+							break;
+						default:
+							return Flux.error(new Exception("Unsupported Movement Type"));
+						}
 
-        switch (movementDto.getClientType().toUpperCase()) {
-            case "PERSONAL":
-                return registerProductService.findPersonalAccountByDocumentAndDocumentTypeAndAccount(movementDto.getOriginDocumentNumber(),
-                                movementDto.getOriginDocumentType(), movementDto.getOriginAccount())
-                        .switchIfEmpty(Mono.error(new Exception()))
-                        .onErrorResume(Mono::error)
-                        .flatMap(x -> validate(x, movementDto).onErrorResume(Mono::error));
-            case "BUSINESS":
-                return registerProductService.findCompanyClientAccountByDocumentAndDocumentTypeAndAccount(movementDto.getOriginDocumentNumber(),
-                                movementDto.getOriginDocumentType(), movementDto.getOriginAccount())
-                        .switchIfEmpty(Mono.error(new Exception()))
-                        .flatMap(x -> validate(x, movementDto).onErrorResume(Mono::error));
-            default:
-                return Mono.error(new Exception("Unsuportted client type"));
-        }
-    }
+						companyClientAccountDto.setBalance(newBalance);
 
-    public Mono<MovementDto> update(MovementDto movementDto) {
+						if (flagCommission) {
+							commissionService.create(
+									new CommissionTransactionDto(companyClientAccountDto.getClient().getDocumentType(),
+											companyClientAccountDto.getClient().getNumberDocument(),
+											movementDto.getMovementType(), companyClientAccountDto.getBalance(),
+											companyClientAccountDto.getTypeAccount().getCommissionTransaction()));
+						}
 
-        return movementRecordService.findById(movementDto.getTransactionId())
-                .switchIfEmpty(Mono.error(new Exception()))
-                .flatMap(x -> {
-                    MovementRecord movementRecord = map(movementDto, MovementRecord.class);
-                    movementRecord.setCreatedAt(x.getCreatedAt());
-                    movementRecord.setUpdatedAt(LocalDateTime.now());
+						Boolean finalFlagCommission = flagCommission;
+						return registerProductService.updateCompanyAccount(companyClientAccountDto).flatMapMany(y -> {
+							movementDto.setAccountName(companyClientAccountDto.getTypeAccount().getName());
+							return setDataAndSave(movementDto, finalFlagCommission);
+						});
+					}
 
-                    return movementRecordService.save(movementRecord).map(y -> map(y, MovementDto.class));
-                });
-    }
+					return Flux.error(new Exception("Max Monthly Movements Per Month Limit Reached"));
+				});
+	}
 
-    public Mono<Void> delete(MovementDto movementDto) {
-        return movementRecordService.findById(movementDto.getTransactionId())
-                .switchIfEmpty(Mono.error(new Exception()))
-                .flatMap(x -> movementRecordService.deleteById(movementDto.getTransactionId()));
-    }
+	public Flux<TransactionDto> createMovement(MovementDto movementDto) {
 
-    public Mono<MovementDto> findById(String id) {
-        return movementRecordService.findById(id).map(x -> map(x, MovementDto.class));
-    }
+		switch (movementDto.getClientType().toUpperCase()) {
+		case "PERSONAL":
+			return registerProductService
+					.findPersonalAccountByDocumentAndDocumentTypeAndAccount(movementDto.getOriginDocumentNumber(),
+							movementDto.getOriginDocumentType(), movementDto.getOriginAccount())
+					.flatMapMany(x -> validate(x, movementDto).onErrorResume(Flux::error));
+		case "BUSINESS":
+			return registerProductService
+					.findCompanyClientAccountByDocumentAndDocumentTypeAndAccount(movementDto.getOriginDocumentNumber(),
+							movementDto.getOriginDocumentType(), movementDto.getOriginAccount())
+					.flatMapMany(x -> validate(x, movementDto).onErrorResume(Flux::error));
+		default:
+			return Flux.error(new Exception("Unsuportted client type"));
+		}
+	}
 
-    public Flux<MovementDto> findAll() {
+	public Mono<MovementDto> update(MovementDto movementDto) {
 
-        return movementRecordService.findAll()
-                .map(x -> map(x, MovementDto.class));
-    }
+		return movementRecordService.findById(movementDto.getTransactionId()).switchIfEmpty(Mono.error(new Exception()))
+				.flatMap(x -> {
+					MovementRecord movementRecord = map(movementDto, MovementRecord.class);
+					movementRecord.setCreatedAt(x.getCreatedAt());
+					movementRecord.setUpdatedAt(LocalDateTime.now());
+
+					return movementRecordService.save(movementRecord).map(y -> map(y, MovementDto.class));
+				});
+	}
+
+	public Mono<Void> delete(MovementDto movementDto) {
+		return movementRecordService.findById(movementDto.getTransactionId()).switchIfEmpty(Mono.error(new Exception()))
+				.flatMap(x -> movementRecordService.deleteById(movementDto.getTransactionId()));
+	}
+
+	public Mono<MovementDto> findById(String id) {
+		return movementRecordService.findById(id).map(x -> map(x, MovementDto.class));
+	}
+
+	public Flux<MovementDto> findAll() {
+		return movementRecordService.findAll().map(x -> map(x, MovementDto.class));
+	}
 }
